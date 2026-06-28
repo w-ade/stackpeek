@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>stackpeek — paste a url, read the stack</title>
+<meta name="description" content="Paste a URL and read its design/dev stack — framework, hosting, styling, type, motion — explained so you learn it.">
+<meta name="theme-color" content="#ffffff">
+<style>
+  @font-face{font-family:"Inter";font-style:normal;font-weight:100 900;font-display:swap;
+    src:url("https://cdn.jsdelivr.net/npm/@fontsource/inter@5.0.0/files/inter-latin-variable-wghtOnly-normal.woff2") format("woff2");}
+  :root{ --bg:#fff; --ink:#18181B; --ink-2:#71717A; --hair:#E4E4E7; }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink)}
+  body{font-family:"Inter",system-ui,sans-serif;font-weight:400;font-size:14px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:780px;margin:0 auto;padding:0 32px;min-height:100vh;display:flex;flex-direction:column}
+  /* hero state: input centered until there's a result */
+  .wrap.idle{justify-content:center}
+  .wrap.idle .report,.wrap.idle .pad{display:none}
+  .pad{height:26px;flex:0 0 auto}
+  header{flex:0 0 auto}
+  .wrap.idle header{margin-bottom:8vh}
+  .mast{color:var(--ink-2);margin-bottom:14px}
+  .field{display:flex;align-items:baseline;gap:10px;border-bottom:1px solid var(--ink);padding-bottom:8px}
+  .field .arrow{color:var(--ink-2)}
+  #url{flex:1;min-width:0;border:0;outline:0;background:none;color:var(--ink);
+    font:400 22px/1.3 "Inter",system-ui;letter-spacing:-.01em}
+  #url::placeholder{color:var(--ink-2);opacity:.6}
+  .hint{color:var(--ink-2);margin-top:10px;font-size:13px}
+  .hint b{font-weight:400;color:var(--ink)}
+  .status{color:var(--ink-2);margin-top:24px;min-height:20px}
+  .status.err{color:var(--ink)}
+  /* report */
+  .report{flex:1 1 auto;padding:8px 0 140px}
+  .rhead{margin:8px 0 34px}
+  .rhead .u{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--ink-2);word-break:break-all}
+  .rhead .t{font-size:15px;margin-top:4px}
+  .row{display:grid;grid-template-columns:120px 1fr;gap:24px;padding:14px 0;border-top:1px solid var(--hair)}
+  .row .label{color:var(--ink-2)}
+  .item{margin:0 0 14px}
+  .item:last-child{margin-bottom:0}
+  .item .n{color:var(--ink)}
+  .item .tch{color:var(--ink-2)}
+  .item .ev{color:var(--ink-2);font-size:12px;font-family:ui-monospace,Menlo,monospace;opacity:.8}
+  .inline{display:flex;flex-wrap:wrap;gap:6px 18px}
+  .inline span{white-space:nowrap}
+  .swatches{display:flex;flex-wrap:wrap;gap:10px}
+  .sw{display:flex;align-items:center;gap:7px;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--ink-2)}
+  .sw i{width:16px;height:16px;border-radius:4px;border:1px solid var(--hair);display:inline-block}
+  .notes li{margin:0 0 8px;color:var(--ink-2);list-style:none;padding-left:16px;position:relative}
+  .notes li::before{content:"–";position:absolute;left:0}
+  ul{margin:0;padding:0}
+  .muted{color:var(--ink-2)}
+  @media (max-width:620px){ .row{grid-template-columns:1fr;gap:4px} #url{font-size:19px} .wrap{padding:0 22px} }
+</style>
+</head>
+<body>
+<div class="wrap idle" id="wrap">
+  <header>
+    <div class="mast">stackpeek</div>
+    <div class="field">
+      <span class="arrow">↳</span>
+      <input id="url" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="paste a url">
+    </div>
+    <div class="hint">Reads a site's <b>design &amp; dev stack</b> — framework, hosting, styling, type, motion — and explains each so you learn it. Press <b>return</b>.</div>
+    <div class="status" id="status"></div>
+  </header>
+  <div class="pad"></div>
+  <main class="report" id="report"></main>
+</div>
+
+<script>
+const wrap   = document.getElementById('wrap');
+const input  = document.getElementById('url');
+const status = document.getElementById('status');
+const report = document.getElementById('report');
+const esc = s => (s==null?'':String(s)).replace(/[&<>"]/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));
+
+function row(label, inner){ return `<div class="row"><div class="label">${label}</div><div>${inner}</div></div>`; }
+
+function render(d){
+  if(d.error){ status.className='status err'; status.textContent = '— ' + d.error; report.innerHTML=''; wrap.classList.add('idle'); return; }
+  status.textContent=''; status.className='status';
+  wrap.classList.remove('idle');
+
+  let html = `<div class="rhead"><div class="u">${esc(d.url)}</div>${d.meta.title?`<div class="t">${esc(d.meta.title)}</div>`:''}</div>`;
+
+  if(!d.groups.length){
+    html += row('Stack', `<div class="muted">No common framework or library fingerprints found — likely a custom/proprietary build, or heavily obfuscated.</div>`);
+  }
+  for(const g of d.groups){
+    const items = g.items.map(i=>`<div class="item"><div class="n">${esc(i.name)}</div><div class="tch">${esc(i.teach)}</div><div class="ev">${esc(i.evidence)}</div></div>`).join('');
+    html += row(g.label, items);
+  }
+
+  // type
+  const f = d.fonts; const flags=[];
+  if(f.google) flags.push('Google Fonts'); if(f.adobe) flags.push('Adobe Fonts');
+  if(f.selfHostedFaces) flags.push(`${f.selfHostedFaces} self-hosted @font-face`);
+  if(f.families.length || flags.length){
+    const fams = f.families.length ? `<div class="inline">${f.families.map(x=>`<span>${esc(x)}</span>`).join('')}</div>` : '<span class="muted">families not exposed in markup</span>';
+    html += row('Type', fams + (flags.length?`<div class="ev" style="margin-top:8px">${flags.map(esc).join(' · ')}</div>`:''));
+  }
+
+  // colors
+  const c = d.colors; const cols = [...new Set([...(c.theme?[c.theme]:[]), ...c.vars, ...c.hexes])].slice(0,10);
+  if(cols.length){
+    html += row('Colour', `<div class="swatches">${cols.map(h=>`<span class="sw"><i style="background:${esc(h)}"></i>${esc(h)}</span>`).join('')}</div>${c.theme?`<div class="ev" style="margin-top:8px">theme-color: ${esc(c.theme)}</div>`:''}`);
+  }
+
+  // meta / signals
+  const m = d.meta; const sig=[];
+  if(m.server) sig.push(`server: ${m.server}`);
+  if(m.poweredBy) sig.push(`x-powered-by: ${m.poweredBy}`);
+  if(m.generator) sig.push(`generator: ${m.generator}`);
+  if(m.lang) sig.push(`lang: ${m.lang}`);
+  sig.push(`viewport: ${m.viewport?'yes':'no'}`);
+  sig.push(`open graph: ${m.og?'yes':'no'}`);
+  if(m.colorScheme) sig.push(`color-scheme: ${m.colorScheme}`);
+  if(m.manifest) sig.push('web manifest');
+  html += row('Signals', `<div class="inline">${sig.map(s=>`<span class="ev">${esc(s)}</span>`).join('')}</div>`);
+
+  if(d.notes && d.notes.length){
+    html += row('Read', `<ul class="notes">${d.notes.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`);
+  }
+
+  report.innerHTML = html;
+}
+
+async function run(u){
+  u = (u||'').trim(); if(!u) return;
+  status.className='status'; status.textContent = 'reading ' + u.replace(/^https?:\/\//,'') + ' …';
+  report.innerHTML='';
+  try{
+    const r = await fetch('/api/analyze?url=' + encodeURIComponent(u));
+    const d = await r.json();
+    render(d);
+    history.replaceState(null,'', '?url=' + encodeURIComponent(u));
+  }catch(e){
+    status.className='status err'; status.textContent = '— something broke fetching that';
+  }
+}
+
+input.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); run(input.value); } });
+
+// shareable / auto-run via ?url=
+const pre = new URL(location.href).searchParams.get('url');
+if(pre){ input.value = pre; run(pre); }
+input.focus();
+</script>
+</body>
+</html>
