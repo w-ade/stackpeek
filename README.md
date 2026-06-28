@@ -9,6 +9,6 @@ A dead-simple page over one serverless function:
   pulls a few linked stylesheets for richer signal, runs the detector.
 - `api/_detect.js` — the pure detection engine (no deps). Testable standalone.
 
-Live: https://stackpeek.vercel.app  ·  share a read: `?url=vercel.com`
+Live: https://trystackpeek.vercel.app  ·  share a read: `?url=vercel.com`
 
 No build step. Locally: `node brainstorming/dev-server.js` → http://localhost:5210
